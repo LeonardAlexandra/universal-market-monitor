@@ -16,7 +16,52 @@ from monitor import OKXMonitor, CONFIG
 class EnhancedTradingSignals(OKXMonitor):
     def __init__(self):
         super().__init__()
-        self.all_symbols = [
+        self.min_volume_24h = 10000000  # $10M USD
+        self.all_symbols = []  # 动态获取
+        
+    def get_active_symbols(self):
+        """获取24h交易量>=$10M的活跃合约标的"""
+        print(f"\n📊 获取活跃合约标的 (24h交易量 >= ${self.min_volume_24h/1e6:.0f}M)...")
+        
+        # 批量获取所有ticker（更高效）
+        tickers_data = self._request('GET', '/api/v5/market/tickers?instType=SWAP')
+        if not tickers_data or tickers_data.get('code') != '0':
+            print("❌ 获取行情失败，使用默认列表")
+            return self._get_default_symbols()
+        
+        active_symbols = []
+        tickers = tickers_data.get('data', [])
+        
+        print(f"  共 {len(tickers)} 个合约，筛选中...")
+        
+        for ticker in tickers:
+            symbol = ticker.get('instId', '')
+            # 只选USDT合约
+            if not symbol.endswith('-USDT-SWAP'):
+                continue
+            
+            vol_24h = float(ticker.get('volCcy24h', 0))  # USDT计价成交量
+            
+            if vol_24h >= self.min_volume_24h:
+                active_symbols.append({
+                    'symbol': symbol,
+                    'vol_24h': vol_24h,
+                    'price': float(ticker.get('last', 0))
+                })
+        
+        # 按交易量排序
+        active_symbols.sort(key=lambda x: x['vol_24h'], reverse=True)
+        
+        print(f"  ✅ 筛选出 {len(active_symbols)} 个活跃合约 (24h>${self.min_volume_24h/1e6:.0f}M)")
+        if len(active_symbols) > 0:
+            top5 = active_symbols[:5]
+            print(f"  前5: " + ", ".join([f"{s['symbol'].replace('-USDT-SWAP','')}(${s['vol_24h']/1e6:.0f}M)" for s in top5]))
+        
+        return [s['symbol'] for s in active_symbols]
+    
+    def _get_default_symbols(self):
+        """默认标的列表（备用）"""
+        return [
             "BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP",
             "XRP-USDT-SWAP", "DOGE-USDT-SWAP", "ADA-USDT-SWAP",
             "AVAX-USDT-SWAP", "LINK-USDT-SWAP", "MATIC-USDT-SWAP",
@@ -212,12 +257,19 @@ class EnhancedTradingSignals(OKXMonitor):
     
     # ============ 功能6: Top5标的推荐 ============
     def scan_top5_opportunities(self):
-        """扫描全市场，推荐Top5交易标的"""
-        print(f"\n🔍 扫描 {len(self.all_symbols)} 个交易标的...")
+        """扫描全市场，推荐Top5交易标的（基于24h交易量筛选）"""
+        # 动态获取活跃标的
+        self.all_symbols = self.get_active_symbols()
+        
+        if not self.all_symbols:
+            print("⚠️ 未获取到活跃标的，使用默认列表")
+            self.all_symbols = self._get_default_symbols()
+        
+        print(f"\n🔍 扫描 {len(self.all_symbols)} 个高流动性标的 (24h交易量>=${self.min_volume_24h/1e6:.0f}M)...")
         
         opportunities = []
         
-        for symbol in self.all_symbols:
+        for symbol in self.all_symbols[:30]:  # 最多扫描前30个
             try:
                 signal = self.generate_trading_signals(symbol)
                 if signal and signal['confidence'] >= 60:

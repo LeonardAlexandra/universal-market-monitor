@@ -1,0 +1,9 @@
+{
+  "name": "universal-market-monitor",
+  "version": "1.0.0",
+  "displayName": "Universal Market Monitor",
+  "description": "通用市场监控系统 - 支持多交易所的价格警报、持仓监控、异常检测",
+  "authors": ["LeonardAlexandra"],
+  "difficulty": "intermediate",
+  "tags": ["trading", "monitor", "alert", "okx", "crypto"]
+}
